@@ -1,4 +1,10 @@
 from fastapi import FastAPI
+from ai_inference_optimization_platform.config.settings import settings
+
+
+print(settings.app_name)
+print(settings.default_model)
+print(settings.redis_url)
 
 app = FastAPI(
     title="AI Inference Optimization Platform",
@@ -18,3 +24,4 @@ async def health():
     return {
         "status": "healthy"
     }
+
