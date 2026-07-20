@@ -1,27 +1,51 @@
 from fastapi import FastAPI
+from ai_inference_optimization_platform.exceptions.handlers import (
+    register_exception_handlers,
+)
+from ai_inference_optimization_platform.schemas.responses import (
+    SuccessResponse,
+)
 from ai_inference_optimization_platform.config.settings import settings
+from ai_inference_optimization_platform.logging.logger import logger
+from ai_inference_optimization_platform.exceptions.custom_exceptions import (
+    AIInferenceException,
+)
 
 
-print(settings.app_name)
-print(settings.default_model)
-print(settings.redis_url)
+logger.info("Application started successfully.")
 
 app = FastAPI(
+
     title="AI Inference Optimization Platform",
     version="0.1.0",
 )
 
+register_exception_handlers(app)
 
-@app.get("/")
+@app.get("/", response_model=SuccessResponse)
 async def root():
-    return {
-        "message": "AI Inference Optimization Platform"
-    }
+
+    logger.info("Root endpoint called.")
+
+    return SuccessResponse(
+        data={
+            "message": "AI Inference Optimization Platform"
+        }
+    )
 
 
-@app.get("/health")
+@app.get("/health", response_model=SuccessResponse)
 async def health():
-    return {
-        "status": "healthy"
-    }
+
+    logger.info("Health check requested.")
+
+    return SuccessResponse(
+        data={
+            "status": "healthy"
+        }
+    )
+
+@app.get("/test")
+async def test():
+    raise AIInferenceException("This is a test exception.")
 
