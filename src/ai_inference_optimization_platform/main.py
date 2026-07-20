@@ -10,9 +10,11 @@ from ai_inference_optimization_platform.logging.logger import logger
 from ai_inference_optimization_platform.exceptions.custom_exceptions import (
     AIInferenceException,
 )
+from ai_inference_optimization_platform.services.llm_service import LLMService
 
 
 logger.info("Application started successfully.")
+llm_service = LLMService()
 
 app = FastAPI(
 
@@ -49,3 +51,16 @@ async def health():
 async def test():
     raise AIInferenceException("This is a test exception.")
 
+
+@app.get("/generate")
+async def generate():
+
+    response = await llm_service.generate(
+        prompt="Hello AI"
+    )
+
+    return SuccessResponse(
+        data={
+            "response": response
+        }
+    )
