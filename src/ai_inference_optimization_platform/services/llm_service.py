@@ -1,4 +1,5 @@
 from ai_inference_optimization_platform.logging.logger import logger
+from ai_inference_optimization_platform.services.providers.ollama_provider import OllamaProvider
 
 
 class LLMService:
@@ -7,23 +8,10 @@ class LLMService:
     """
 
     def __init__(self) -> None:
+        self.provider = OllamaProvider()
         logger.info("LLMService initialized.")
 
     async def generate(self, prompt: str) -> str:
-        """
-        Generate a response from the language model.
+        logger.info("Generating response through provider.")
 
-        Parameters
-        ----------
-        prompt : str
-            User prompt.
-
-        Returns
-        -------
-        str
-            Model response.
-        """
-
-        logger.info("Generating response.")
-
-        return f"Mock response for: {prompt}"
+        return await self.provider.generate(prompt)
