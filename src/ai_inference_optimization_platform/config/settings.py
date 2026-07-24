@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     cache_ttl: int = 3600
 
     default_model: str = "qwen2.5:3b"
+    default_provider: str = "ollama"
 
     model_config = SettingsConfigDict(
         env_file=".env",

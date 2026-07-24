@@ -25,9 +25,13 @@ from ai_inference_optimization_platform.utils.hashing import (
     generate_prompt_hash,
 )
 from ai_inference_optimization_platform.services.metrics_service import metrics_service
+from ai_inference_optimization_platform.services.embedding_service import (
+    EmbeddingService,
+)
 
 redis_client = RedisClient()
 llm_service = LLMService()
+embedding_service = EmbeddingService()
 
 
 @asynccontextmanager
@@ -88,9 +92,9 @@ async def generate(request: GenerateRequest):
 
     logger.info("Generate endpoint called.")
 
-    prompt_hash = generate_prompt_hash(request.prompt)
+    #prompt_hash = generate_prompt_hash(request.prompt)
 
-    logger.info(f"Prompt hash: {prompt_hash}")
+    #logger.info(f"Prompt hash: {prompt_hash}")
     
 
     response = await llm_service.generate(

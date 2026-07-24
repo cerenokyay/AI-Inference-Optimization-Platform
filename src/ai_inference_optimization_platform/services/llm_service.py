@@ -1,7 +1,7 @@
 from ai_inference_optimization_platform.logging.logger import logger
 from ai_inference_optimization_platform.services.cache_service import CacheService
-from ai_inference_optimization_platform.services.providers.ollama_provider import (
-    OllamaProvider,
+from ai_inference_optimization_platform.services.providers.provider_factory import (
+    ProviderFactory,
 )
 from ai_inference_optimization_platform.utils.hashing import generate_prompt_hash
 from ai_inference_optimization_platform.utils.prompt_normalizer import (
@@ -13,7 +13,7 @@ class LLMService:
     """Service responsible for interacting with language model providers."""
 
     def __init__(self) -> None:
-        self.provider = OllamaProvider()
+        self.provider = ProviderFactory.create()
         self.cache = CacheService()
 
         logger.info("LLMService initialized.")
