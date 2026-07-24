@@ -1,5 +1,6 @@
 from ai_inference_optimization_platform.cache.redis_client import RedisClient
 from ai_inference_optimization_platform.logging.logger import logger
+from ai_inference_optimization_platform.services.metrics_service import metrics_service
 
 
 class CacheService:
@@ -9,6 +10,7 @@ class CacheService:
 
     def __init__(self) -> None:
         self.redis = RedisClient()
+        
 
     async def get(self, key: str):
 
@@ -18,8 +20,10 @@ class CacheService:
 
         if value is None:
             logger.info("Cache MISS")
+            metrics_service.cache_miss()
         else:
             logger.info("Cache HIT")
+            metrics_service.cache_hit()
 
         return value
 

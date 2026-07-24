@@ -24,6 +24,7 @@ from ai_inference_optimization_platform.services.llm_service import LLMService
 from ai_inference_optimization_platform.utils.hashing import (
     generate_prompt_hash,
 )
+from ai_inference_optimization_platform.services.metrics_service import metrics_service
 
 redis_client = RedisClient()
 llm_service = LLMService()
@@ -100,4 +101,11 @@ async def generate(request: GenerateRequest):
         data={
             "response": response
         }
+    )
+
+@app.get("/metrics", response_model=SuccessResponse)
+async def metrics():
+
+    return SuccessResponse(
+        data=metrics_service.get_metrics()
     )
