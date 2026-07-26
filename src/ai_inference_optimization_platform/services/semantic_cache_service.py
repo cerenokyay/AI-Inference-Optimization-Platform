@@ -1,64 +1,67 @@
 from ai_inference_optimization_platform.logging.logger import logger
-from ai_inference_optimization_platform.services.embedding_service import (
-    EmbeddingService,
+from ai_inference_optimization_platform.services.metrics_service import (
+    metrics_service,
 )
-from ai_inference_optimization_platform.utils.vector import cosine_similarity
+from ai_inference_optimization_platform.services.vector_store.faiss_store import (
+    FAISSStore,
+)
 
 
 class SemanticCacheService:
-    """Service responsible for semantic cache operations using vector similarity."""
+    """Service responsible for semantic cache operations using FAISS vector search."""
 
     def __init__(self) -> None:
-        self.embedding_service = EmbeddingService()
-        self.entries = []
+        self.store = FAISSStore()
+        self.store.load("data/vector_store/index.faiss")
 
         logger.info("SemanticCacheService initialized.")
 
-    async def find_similar(self, embedding: list[float]):
-        logger.info(f"Embedding length: {len(embedding)}")
+    async def find_similar(
+        self,
+        embedding: list[float],
+        threshold: float = 0.85,
+    ) -> str | None:
+        # FAISS üzerinde en yakın 5 adayı ara
+        result = self.store.search(embedding=embedding, top_k=5)
 
+        if result is None:
+            logger.info("Semantic Cache MISS (Vector store is empty)")
+            return None
 
-        best_score = 0.0
-        best_response = None
+        scores, indices = result
 
-        for item in self.entries:
-            score = cosine_similarity(
-                embedding,
-                item["embedding"],
+        # En iyi adayı (index 0) değerlendir
+        best_score = float(scores[0][0])
+        best_index = int(indices[0][0])
+
+        logger.info(f"FAISS Best similarity score: {best_score:.4f}")
+
+        if best_score >= threshold and best_index != -1:
+            matched_metadata = self.store.metadata[best_index]
+            matched_prompt = matched_metadata.get("prompt", "")
+
+            logger.info(
+                f'Semantic Cache HIT ({best_score:.4f}) -> Matched with: "{matched_prompt}"'
             )
 
-            logger.info(f"Similarity score: {score:.4f}")
-            logger.info(f'Comparing with: "{item["prompt"]}"')
+            # Metrics bildirimi
+            metrics_service.semantic_hit()
 
-            if score > best_score:
-                best_score = score
-                best_response = item["response"]
-
-        logger.info(f"Best similarity: {best_score:.4f}")
-
-
-        if best_score >= 0.95:
-            logger.info("Semantic Cache HIT")
-            return best_response
+            return matched_metadata.get("response")
 
         logger.info("Semantic Cache MISS")
         return None
 
     async def add(
         self,
+        prompt: str,
         embedding: list[float],
         response: str,
-        prompt: str,
-
     ) -> None:
-        self.entries.append(
-            {
-                "prompt": prompt,
-                "embedding": embedding,
-                "response": response,
-            }
+        self.store.add(
+            embedding=embedding,
+            prompt=prompt,
+            response=response,
         )
 
-        logger.info(
-            f"Stored semantic embedding. Total entries: {len(self.entries)}"
-        )
+        self.store.save("data/vector_store/index.faiss")
