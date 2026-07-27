@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from fastapi.responses import StreamingResponse
 
 from fastapi import FastAPI
 
@@ -27,6 +28,9 @@ from ai_inference_optimization_platform.utils.hashing import (
 from ai_inference_optimization_platform.services.metrics_service import metrics_service
 from ai_inference_optimization_platform.services.embedding_service import (
     EmbeddingService,
+)
+from ai_inference_optimization_platform.services.benchmark_service import (
+    benchmark_service,
 )
 
 redis_client = RedisClient()
@@ -87,29 +91,25 @@ async def test():
     raise AIInferenceException("This is a test exception.")
 
 
-@app.post("/generate", response_model=SuccessResponse)
-async def generate(request: GenerateRequest):
+@app.post("/generate")
+async def generate_stream_endpoint(request: GenerateRequest): # Kendi Pydantic request modelinin ismini kullan
+    """
+    Endpoint that handles the prompt and streams back the LLM or Cache response.
+    """
+    async def event_generator():
+        async for chunk in llm_service.generate_stream(prompt=request.prompt):
+            yield chunk
+            
+    # media_type="text/plain" veya akış formatına göre "text/event-stream" kullanabilirsin.
+    return StreamingResponse(event_generator(), media_type="text/plain")
 
-    logger.info("Generate endpoint called.")
-
-    #prompt_hash = generate_prompt_hash(request.prompt)
-
-    #logger.info(f"Prompt hash: {prompt_hash}")
-    
-
-    response = await llm_service.generate(
-        prompt=request.prompt
-    )
-
-    return SuccessResponse(
-        data={
-            "response": response
-        }
-    )
 
 @app.get("/metrics", response_model=SuccessResponse)
 async def metrics():
 
     return SuccessResponse(
-        data=metrics_service.get_metrics()
+        data={
+            **metrics_service.get_metrics(),
+            **benchmark_service.get_metrics(),
+        }
     )

@@ -25,6 +25,10 @@ class Settings(BaseSettings):
 
     cache_ttl: int = 3600
 
+    # Vektör Önbellek Eşik Değerleri
+    semantic_threshold: float = 0.85
+    duplicate_threshold: float = 0.99
+
     default_model: str = "qwen2.5:3b"
     default_provider: str = "ollama"
 

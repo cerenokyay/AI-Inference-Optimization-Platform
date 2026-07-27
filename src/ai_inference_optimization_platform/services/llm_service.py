@@ -1,4 +1,10 @@
+import time
+from typing import AsyncGenerator
+
 from ai_inference_optimization_platform.logging.logger import logger
+from ai_inference_optimization_platform.services.benchmark_service import (
+    benchmark_service,
+)
 from ai_inference_optimization_platform.services.cache_service import CacheService
 from ai_inference_optimization_platform.services.embedding_service import (
     EmbeddingService,
@@ -19,7 +25,7 @@ from ai_inference_optimization_platform.utils.prompt_normalizer import (
 
 
 class LLMService:
-    """Service responsible for interacting with language model providers."""
+    """Service responsible for interacting with language model providers and streaming."""
 
     def __init__(self) -> None:
         self.provider = ProviderFactory.create()
@@ -29,66 +35,82 @@ class LLMService:
 
         logger.info("LLMService initialized.")
 
-    async def generate(self, prompt: str) -> str:
-        logger.info("Generating response.")
+    async def generate_stream(self, prompt: str) -> AsyncGenerator[str, None]:
+        benchmark_service.record_request()
+        request_start = time.perf_counter()
 
-        # 1. Normalize Prompt
+        logger.info("Generating streaming response.")
+
         normalized_prompt = normalize_prompt(prompt)
-        logger.info(f"Normalized prompt: {normalized_prompt}")
-
-        # 2. Generate Hash
         prompt_hash = generate_prompt_hash(normalized_prompt)
-        logger.info(f"Prompt hash: {prompt_hash}")
 
-        # 3. Generate Embedding
-        embedding = await self.embedding_service.generate_embedding(
-            normalized_prompt
+        embedding_start = time.perf_counter()
+        embedding = await self.embedding_service.generate_embedding(normalized_prompt)
+        benchmark_service.record_embedding_time(
+            (time.perf_counter() - embedding_start) * 1000
         )
 
-        # 4. Semantic Cache Check (FAISS top 5)
-        semantic_response = await self.semantic_cache.find_similar(
-            embedding=embedding,
-            threshold=0.85,
+        # 1. Semantic Cache Kontrolü
+        semantic_start = time.perf_counter()
+        semantic_response = await self.semantic_cache.find_similar(embedding=embedding)
+        benchmark_service.record_semantic_search_time(
+            (time.perf_counter() - semantic_start) * 1000
         )
 
         if semantic_response is not None:
-            logger.info("Returning semantic cached response.")
-            return semantic_response
+            logger.info("Returning semantic cached response as stream.")
+            yield semantic_response
+            benchmark_service.record_request_time(
+                (time.perf_counter() - request_start) * 1000
+            )
+            return
 
-        # 5. Exact Cache Check (Redis)
+        # 2. Exact Cache Kontrolü (Redis)
+        cache_start = time.perf_counter()
         cached_response = await self.cache.get(prompt_hash)
+        benchmark_service.record_cache_lookup_time(
+            (time.perf_counter() - cache_start) * 1000
+        )
 
         if cached_response is not None:
-            logger.info("Returning exact cached response.")
-
-            # Exact hit olan isteği vektör mağazasına da besle
+            logger.info("Returning exact cached response as stream.")
             await self.semantic_cache.add(
                 prompt=normalized_prompt,
                 embedding=embedding,
                 response=cached_response,
             )
+            yield cached_response
+            benchmark_service.record_request_time(
+                (time.perf_counter() - request_start) * 1000
+            )
+            return
 
-            return cached_response
-
-        # 6. Provider Call (LLM Fallback)
-        logger.info("Generating response from provider.")
-
-        # Metrik bildirimi: Provider çağrısı yapılıyor
+        # 3. Provider Çağrısı (LLM Fallback - Streaming)
+        logger.info("Streaming response from provider.")
         metrics_service.provider_call()
 
-        response = await self.provider.generate(normalized_prompt)
+        provider_start = time.perf_counter()
+        full_response_chunks = []
 
-        # 7. Exact Cache Save (Redis)
-        await self.cache.set(
-            key=prompt_hash,
-            value=response,
+        # Parçaları al ve anında kullanıcıya ilet
+        async for chunk in self.provider.generate_stream(normalized_prompt):
+            full_response_chunks.append(chunk)
+            yield chunk
+
+        benchmark_service.record_provider_time(
+            (time.perf_counter() - provider_start) * 1000
         )
 
-        # 8. Semantic Cache Save (FAISS + metadata.json)
+        full_response = "".join(full_response_chunks)
+
+        # 4. Üretim Bittiğinde Cache'lere Kaydet
+        await self.cache.set(key=prompt_hash, value=full_response)
         await self.semantic_cache.add(
             prompt=normalized_prompt,
             embedding=embedding,
-            response=response,
+            response=full_response,
         )
 
-        return response
+        benchmark_service.record_request_time(
+            (time.perf_counter() - request_start) * 1000
+        )
