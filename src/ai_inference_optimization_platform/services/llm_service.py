@@ -145,3 +145,19 @@ class LLMService:
             embedding=embedding,
             response=full_response,
         )
+
+        # ========================================================
+        # ✨ BURAYI GERİ EKLİYORUZ  ✨
+        # ========================================================
+        total_latency = (time.perf_counter() - request_start) * 1000
+        benchmark_service.record_request_time(total_latency)
+
+        # Veritabanına Logla
+        await MetricsDatabase.save_metric(
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            prompt_hash=prompt_hash,
+            provider=self.provider_name,
+            model_name=self.model_name,
+            cache_status="MISS",
+            total_latency_ms=total_latency,
+        )
