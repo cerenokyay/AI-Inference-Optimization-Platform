@@ -38,3 +38,15 @@ build/
 
 # uv
 .python-version
+
+# Application Data & Databases
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Vector Cache
+*.faiss
+
+# Environment Variables
+.env

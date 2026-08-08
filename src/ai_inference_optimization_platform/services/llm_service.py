@@ -23,6 +23,7 @@ from ai_inference_optimization_platform.services.semantic_cache_service import (
 )
 from ai_inference_optimization_platform.utils.hashing import generate_prompt_hash
 from ai_inference_optimization_platform.utils.prompt_normalizer import normalize_prompt
+from ai_inference_optimization_platform.utils.prompt_builder import PromptBuilder
 
 
 class LLMService:
@@ -123,8 +124,11 @@ class LLMService:
         provider_start = time.perf_counter()
         full_response_chunks = []
 
-        # Parçaları al ve anında kullanıcıya ilet
-        async for chunk in self.provider.generate_stream(normalized_prompt):
+        # ✨ BURASI YENİ: Soruyu metriklerle ve kurallarla zenginleştir
+        enriched_prompt = PromptBuilder.build_final_prompt(normalized_prompt)
+
+        # Parçaları al ve anında kullanıcıya ilet (Artık enriched_prompt gidiyor)
+        async for chunk in self.provider.generate_stream(enriched_prompt):
             full_response_chunks.append(chunk)
             yield chunk
 
@@ -134,23 +138,10 @@ class LLMService:
 
         full_response = "".join(full_response_chunks)
 
-        # Üretim Bittiğinde Cache'lere Kaydet
+        # Üretim Bittiğinde Cache'lere Kaydet (Cache'e orjinal/ham prompt kaydedilir!)
         await self.cache.set(key=prompt_hash, value=full_response)
         await self.semantic_cache.add(
             prompt=normalized_prompt,
             embedding=embedding,
             response=full_response,
-        )
-
-        total_latency = (time.perf_counter() - request_start) * 1000
-        benchmark_service.record_request_time(total_latency)
-
-        # Veritabanına Logla
-        await MetricsDatabase.save_metric(
-            timestamp=datetime.now(timezone.utc).isoformat(),
-            prompt_hash=prompt_hash,
-            provider=self.provider_name,
-            model_name=self.model_name,
-            cache_status="MISS",
-            total_latency_ms=total_latency,
         )

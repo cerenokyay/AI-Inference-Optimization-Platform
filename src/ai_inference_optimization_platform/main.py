@@ -29,6 +29,7 @@ from ai_inference_optimization_platform.services.metrics_service import (
     metrics_service,
 )
 from ai_inference_optimization_platform.utils.hashing import generate_prompt_hash
+from ai_inference_optimization_platform.utils.prompt_builder import PromptBuilder
 
 # Servis Başlatmaları
 redis_client = RedisClient()
