@@ -124,8 +124,13 @@ class LLMService:
         provider_start = time.perf_counter()
         full_response_chunks = []
 
-        # ✨ BURASI YENİ: Soruyu metriklerle ve kurallarla zenginleştir
-        enriched_prompt = PromptBuilder.build_final_prompt(normalized_prompt)
+        # ✨ BURASI GÜNCELLENDİ: Test vs Mimari Sohbet Ayrımı,# Parçaları al ve anında kullanıcıya ilet..
+        if "[test_mode]" in normalized_prompt:
+            enriched_prompt = normalized_prompt.replace("[test_mode]", "").strip()
+        else:
+            enriched_prompt = PromptBuilder.build_final_prompt(normalized_prompt)
+
+        
 
         # Parçaları al ve anında kullanıcıya ilet (Artık enriched_prompt gidiyor)
         async for chunk in self.provider.generate_stream(enriched_prompt):
