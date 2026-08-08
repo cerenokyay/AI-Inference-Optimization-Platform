@@ -35,13 +35,20 @@ class LLMService:
         self.semantic_cache = SemanticCacheService()
         self.embedding_service = EmbeddingService()
 
-        # Sağlayıcı ve model isimlerini metrikler için baştan belirliyoruz
+        # Sağlayıcı ve model isimlerini metrikler için baştan belirliyoruz (Varsayılanlar)
         self.provider_name = self.provider.__class__.__name__
         self.model_name = getattr(self.provider, "model", settings.default_model)
 
         logger.info("LLMService initialized.")
 
-    async def generate_stream(self, prompt: str) -> AsyncGenerator[str, None]:
+    # ✨ YENİ: Dışarıdan dinamik model ve sağlayıcı seçimi eklendi
+    async def generate_stream(
+        self, 
+        prompt: str,
+        provider_override: str = None,
+        model_override: str = None,
+        api_key: str = None
+    ) -> AsyncGenerator[str, None]:
         benchmark_service.record_request()
         request_start = time.perf_counter()
 
@@ -49,6 +56,20 @@ class LLMService:
 
         normalized_prompt = normalize_prompt(prompt)
         prompt_hash = generate_prompt_hash(normalized_prompt)
+
+        # Dinamik Sağlayıcı (Provider) Belirleme
+        active_provider = self.provider
+        current_provider_name = self.provider_name
+        current_model_name = self.model_name
+
+        if provider_override and model_override:
+            active_provider = ProviderFactory.create(
+                provider_type=provider_override, 
+                model=model_override, 
+                api_key=api_key
+            )
+            current_provider_name = active_provider.__class__.__name__
+            current_model_name = getattr(active_provider, "model", model_override)
 
         embedding_start = time.perf_counter()
         embedding = await self.embedding_service.generate_embedding(normalized_prompt)
@@ -76,8 +97,8 @@ class LLMService:
             await MetricsDatabase.save_metric(
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 prompt_hash=prompt_hash,
-                provider=self.provider_name,
-                model_name=self.model_name,
+                provider=current_provider_name,
+                model_name=current_model_name,
                 cache_status="SEMANTIC_HIT",
                 total_latency_ms=total_latency,
             )
@@ -108,8 +129,8 @@ class LLMService:
             await MetricsDatabase.save_metric(
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 prompt_hash=prompt_hash,
-                provider=self.provider_name,
-                model_name=self.model_name,
+                provider=current_provider_name,
+                model_name=current_model_name,
                 cache_status="EXACT_HIT",
                 total_latency_ms=total_latency,
             )
@@ -118,24 +139,27 @@ class LLMService:
         # ==========================================
         # 3. Provider Çağrısı (LLM Fallback - Streaming)
         # ==========================================
-        logger.info("Streaming response from provider.")
+        logger.info(f"Streaming response from provider: {current_provider_name} ({current_model_name})")
         metrics_service.provider_call()
 
         provider_start = time.perf_counter()
         full_response_chunks = []
 
-        # ✨ BURASI GÜNCELLENDİ: Test vs Mimari Sohbet Ayrımı,# Parçaları al ve anında kullanıcıya ilet..
+        # Test vs Mimari Sohbet Ayrımı
         if "[test_mode]" in normalized_prompt:
             enriched_prompt = normalized_prompt.replace("[test_mode]", "").strip()
         else:
             enriched_prompt = PromptBuilder.build_final_prompt(normalized_prompt)
 
-        
-
-        # Parçaları al ve anında kullanıcıya ilet (Artık enriched_prompt gidiyor)
-        async for chunk in self.provider.generate_stream(enriched_prompt):
-            full_response_chunks.append(chunk)
-            yield chunk
+        # ✨ YENİ: Güvenli Streaming Çağrısı (Try-Except ile)
+        try:
+            async for chunk in active_provider.generate_stream(enriched_prompt):
+                full_response_chunks.append(chunk)
+                yield chunk
+        except Exception as e:
+            logger.error(f"Provider Error: {e}")
+            yield f"\n\n**[SİSTEM HATASI]**: Seçili model ({current_model_name}) ile iletişim kurulamadı. Lütfen model ayarlarınızı veya API anahtarınızı kontrol edin. Detay: {str(e)}"
+            return
 
         benchmark_service.record_provider_time(
             (time.perf_counter() - provider_start) * 1000
@@ -143,7 +167,7 @@ class LLMService:
 
         full_response = "".join(full_response_chunks)
 
-        # Üretim Bittiğinde Cache'lere Kaydet (Cache'e orjinal/ham prompt kaydedilir!)
+        # Üretim Bittiğinde Cache'lere Kaydet
         await self.cache.set(key=prompt_hash, value=full_response)
         await self.semantic_cache.add(
             prompt=normalized_prompt,
@@ -151,9 +175,6 @@ class LLMService:
             response=full_response,
         )
 
-        # ========================================================
-        # ✨ BURAYI GERİ EKLİYORUZ  ✨
-        # ========================================================
         total_latency = (time.perf_counter() - request_start) * 1000
         benchmark_service.record_request_time(total_latency)
 
@@ -161,8 +182,8 @@ class LLMService:
         await MetricsDatabase.save_metric(
             timestamp=datetime.now(timezone.utc).isoformat(),
             prompt_hash=prompt_hash,
-            provider=self.provider_name,
-            model_name=self.model_name,
+            provider=current_provider_name,
+            model_name=current_model_name,
             cache_status="MISS",
             total_latency_ms=total_latency,
         )

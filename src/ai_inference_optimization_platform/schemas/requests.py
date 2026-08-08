@@ -1,4 +1,5 @@
 from pydantic import BaseModel, Field
+from typing import Optional
 
 
 class GenerateRequest(BaseModel):
@@ -25,4 +26,22 @@ class GenerateRequest(BaseModel):
         ge=1,
         le=4096,
         description="Maximum number of generated tokens.",
+    )
+
+    # ==========================================
+    # ✨ YENİ: Dinamik Model Yönlendirme Alanları
+    # ==========================================
+    provider: Optional[str] = Field(
+        default=None, 
+        description="Örn: openai, ollama, anthropic"
+    )
+    
+    model_name: Optional[str] = Field(
+        default=None, 
+        description="Örn: gpt-4o, qwen2.5:3b"
+    )
+    
+    api_key: Optional[str] = Field(
+        default=None, 
+        description="Kullanıcıya özel API anahtarı"
     )

@@ -92,11 +92,16 @@ async def generate_stream_endpoint(request: GenerateRequest):
     Endpoint that handles the prompt and streams back the LLM or Cache response.
     """
     async def event_generator():
-        async for chunk in llm_service.generate_stream(prompt=request.prompt):
+        # ✨ GÜNCELLENDİ: Frontend'den gelen dinamik parametreleri LLMService'e iletiyoruz
+        async for chunk in llm_service.generate_stream(
+            prompt=request.prompt,
+            provider_override=request.provider,
+            model_override=request.model_name,
+            api_key=request.api_key
+        ):
             yield chunk
 
     return StreamingResponse(event_generator(), media_type="text/plain")
-
 
 @app.get("/metrics", response_model=SuccessResponse)
 async def metrics():
