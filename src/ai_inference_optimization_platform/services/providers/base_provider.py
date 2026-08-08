@@ -1,14 +1,16 @@
 from abc import ABC, abstractmethod
+from typing import AsyncGenerator
 
 
 class BaseProvider(ABC):
-    """
-    Base interface for all LLM providers.
-    """
+    """Abstract base class for all LLM providers."""
 
     @abstractmethod
     async def generate(self, prompt: str) -> str:
-        """
-        Generate a response from a language model.
-        """
+        """Generates a complete response string."""
+        pass
+
+    @abstractmethod
+    async def generate_stream(self, prompt: str) -> AsyncGenerator[str, None]:
+        """Streams the response chunk by chunk."""
         pass

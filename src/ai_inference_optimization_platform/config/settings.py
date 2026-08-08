@@ -31,6 +31,9 @@ class Settings(BaseSettings):
 
     default_model: str = "qwen2.5:3b"
     default_provider: str = "ollama"
+    
+    # Yeni Fallback Zinciri (Sırayla denenecek)
+    provider_fallback_chain: str = "openai,anthropic,ollama"
 
     model_config = SettingsConfigDict(
         env_file=".env",

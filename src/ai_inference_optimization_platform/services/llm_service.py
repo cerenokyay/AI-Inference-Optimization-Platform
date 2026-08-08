@@ -1,6 +1,9 @@
 import time
+from datetime import datetime, timezone
 from typing import AsyncGenerator
 
+from ai_inference_optimization_platform.config.settings import settings
+from ai_inference_optimization_platform.database.metrics_db import MetricsDatabase
 from ai_inference_optimization_platform.logging.logger import logger
 from ai_inference_optimization_platform.services.benchmark_service import (
     benchmark_service,
@@ -19,9 +22,7 @@ from ai_inference_optimization_platform.services.semantic_cache_service import (
     SemanticCacheService,
 )
 from ai_inference_optimization_platform.utils.hashing import generate_prompt_hash
-from ai_inference_optimization_platform.utils.prompt_normalizer import (
-    normalize_prompt,
-)
+from ai_inference_optimization_platform.utils.prompt_normalizer import normalize_prompt
 
 
 class LLMService:
@@ -32,6 +33,10 @@ class LLMService:
         self.cache = CacheService()
         self.semantic_cache = SemanticCacheService()
         self.embedding_service = EmbeddingService()
+
+        # Sağlayıcı ve model isimlerini metrikler için baştan belirliyoruz
+        self.provider_name = self.provider.__class__.__name__
+        self.model_name = getattr(self.provider, "model", settings.default_model)
 
         logger.info("LLMService initialized.")
 
@@ -50,7 +55,9 @@ class LLMService:
             (time.perf_counter() - embedding_start) * 1000
         )
 
+        # ==========================================
         # 1. Semantic Cache Kontrolü
+        # ==========================================
         semantic_start = time.perf_counter()
         semantic_response = await self.semantic_cache.find_similar(embedding=embedding)
         benchmark_service.record_semantic_search_time(
@@ -60,12 +67,24 @@ class LLMService:
         if semantic_response is not None:
             logger.info("Returning semantic cached response as stream.")
             yield semantic_response
-            benchmark_service.record_request_time(
-                (time.perf_counter() - request_start) * 1000
+            
+            total_latency = (time.perf_counter() - request_start) * 1000
+            benchmark_service.record_request_time(total_latency)
+            
+            # Veritabanına Logla
+            await MetricsDatabase.save_metric(
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                prompt_hash=prompt_hash,
+                provider=self.provider_name,
+                model_name=self.model_name,
+                cache_status="SEMANTIC_HIT",
+                total_latency_ms=total_latency,
             )
             return
 
+        # ==========================================
         # 2. Exact Cache Kontrolü (Redis)
+        # ==========================================
         cache_start = time.perf_counter()
         cached_response = await self.cache.get(prompt_hash)
         benchmark_service.record_cache_lookup_time(
@@ -80,12 +99,24 @@ class LLMService:
                 response=cached_response,
             )
             yield cached_response
-            benchmark_service.record_request_time(
-                (time.perf_counter() - request_start) * 1000
+            
+            total_latency = (time.perf_counter() - request_start) * 1000
+            benchmark_service.record_request_time(total_latency)
+            
+            # Veritabanına Logla
+            await MetricsDatabase.save_metric(
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                prompt_hash=prompt_hash,
+                provider=self.provider_name,
+                model_name=self.model_name,
+                cache_status="EXACT_HIT",
+                total_latency_ms=total_latency,
             )
             return
 
+        # ==========================================
         # 3. Provider Çağrısı (LLM Fallback - Streaming)
+        # ==========================================
         logger.info("Streaming response from provider.")
         metrics_service.provider_call()
 
@@ -103,7 +134,7 @@ class LLMService:
 
         full_response = "".join(full_response_chunks)
 
-        # 4. Üretim Bittiğinde Cache'lere Kaydet
+        # Üretim Bittiğinde Cache'lere Kaydet
         await self.cache.set(key=prompt_hash, value=full_response)
         await self.semantic_cache.add(
             prompt=normalized_prompt,
@@ -111,6 +142,15 @@ class LLMService:
             response=full_response,
         )
 
-        benchmark_service.record_request_time(
-            (time.perf_counter() - request_start) * 1000
+        total_latency = (time.perf_counter() - request_start) * 1000
+        benchmark_service.record_request_time(total_latency)
+
+        # Veritabanına Logla
+        await MetricsDatabase.save_metric(
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            prompt_hash=prompt_hash,
+            provider=self.provider_name,
+            model_name=self.model_name,
+            cache_status="MISS",
+            total_latency_ms=total_latency,
         )
